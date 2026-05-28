@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import ModelSelector from './ModelSelector.vue'
 import type { SessionInfo, ModelInfo, ThinkingLevel } from '../types'
 
 const props = defineProps<{
@@ -15,6 +14,7 @@ const emit = defineEmits<{
   'select-session': [session: SessionInfo]
   'change-directory': []
   'collapse': []
+  'open-settings': []
 }>()
 
 const recentSessions = computed(() => props.sessions.slice(0, 50))
@@ -80,11 +80,14 @@ function truncate(str: string, max: number) {
         v-for="session in recentSessions"
         :key="session.sessionId"
         @click="$emit('select-session', session)"
-        class="group px-3 py-2.5 rounded-xl cursor-pointer transition-all duration-150 mb-0.5
-               hover:bg-gray-200 dark:hover:bg-white/[0.06]"
-        :class="{ 'bg-gray-200 dark:bg-white/[0.08]': currentSession?.sessionId === session.sessionId }"
+        class="px-3 py-2.5 rounded-xl cursor-pointer transition-colors duration-150 mb-0.5
+               border-l-[3px] border-transparent
+               hover:bg-gray-100 dark:hover:bg-white/[0.06]"
+        :class="{
+          'border-blue-500 dark:border-blue-400 font-semibold text-gray-900 dark:text-white': currentSession?.sessionId === session.sessionId
+        }"
       >
-        <div class="text-[13px] font-medium text-gray-800 dark:text-gray-200 truncate leading-tight">
+        <div class="text-[13px] font-medium truncate leading-tight">
           {{ truncate(session.displayName, 28) }}
         </div>
         <div class="flex items-center justify-between mt-1.5">
@@ -107,14 +110,19 @@ function truncate(str: string, max: number) {
     </div>
 
     <!-- 底部 -->
-    <div class="px-2 py-2 border-t border-gray-200 dark:border-white/5 space-y-2">
-      <div class="px-2">
-        <div class="text-[11px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">设置</div>
-        <ModelSelector
-          :model="props.model"
-          :thinking-level="props.thinkingLevel"
-        />
-      </div>
+    <div class="px-2 py-2 border-t border-gray-200 dark:border-white/5 space-y-1.5">
+      <button
+        @click="$emit('open-settings')"
+        class="w-full py-2 px-3 text-[12px] text-gray-500 hover:text-gray-700 dark:hover:text-gray-300
+               hover:bg-gray-200 dark:hover:bg-white/[0.04] rounded-xl transition-colors flex items-center gap-2.5"
+      >
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+        设置
+      </button>
 
       <button
         @click="$emit('change-directory')"

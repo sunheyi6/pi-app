@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import Sidebar from './components/Sidebar.vue'
 import ChatArea from './components/ChatArea.vue'
+import SettingsPanel from './components/SettingsPanel.vue'
 import { usePiAgent } from './composables/usePiAgent'
 import { useChatStore } from './stores/chatStore'
 import { useThemeStore } from './stores/themeStore'
@@ -12,6 +13,7 @@ const themeStore = useThemeStore()
 const initialized = ref(false)
 const showWelcome = ref(true)
 const sidebarCollapsed = ref(false)
+const showSettings = ref(false)
 const startupError = ref('')
 const startupLog = ref<string[]>([])
 
@@ -57,7 +59,7 @@ async function handleNewChat() {
   try {
     await piAgent.newSession()
     store.clearMessages()
-    showWelcome.value = false
+    showWelcome.value = true
     log('新建会话成功')
     // 更新当前会话为最新的那个
     if (store.sessions.length > 0) {
@@ -116,6 +118,7 @@ onUnmounted(() => {
       @select-session="handleSelectSession"
       @change-directory="handleChangeDirectory"
       @collapse="sidebarCollapsed = true"
+      @open-settings="showSettings = true"
     />
 
     <!-- 折叠按钮 -->
@@ -152,5 +155,13 @@ onUnmounted(() => {
         @abort="piAgent.abort().catch(e => log(`中止失败: ${e}`))"
       />
     </div>
+
+    <!-- 设置面板 -->
+    <SettingsPanel
+      v-if="showSettings"
+      :model="store.appState.model"
+      :thinking-level="store.appState.thinkingLevel"
+      @close="showSettings = false"
+    />
   </div>
 </template>

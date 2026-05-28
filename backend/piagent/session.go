@@ -111,7 +111,7 @@ func (sm *SessionManager) readSessionHeader(filePath string) (*SessionHeaderInfo
 
 		entryType, _ := entry["type"].(string)
 		if entryType == "session" {
-			if sid, ok := entry["sessionId"].(string); ok {
+			if sid, ok := entry["id"].(string); ok {
 				info.SessionID = sid
 			}
 			if name, ok := entry["displayName"].(string); ok {
