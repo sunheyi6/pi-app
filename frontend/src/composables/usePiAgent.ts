@@ -130,6 +130,8 @@ export function usePiAgent() {
         store.setStreaming(false)
         store.finalizeStreamingMessage()
         loadSessions().then(() => autoNameCurrentSession())
+        // 处理输入队列：自动发送下一条
+        processInputQueue()
         break
 
       case 'message_start':
@@ -149,14 +151,16 @@ export function usePiAgent() {
             event.message.usage,
             event.message.stopReason
           )
-          // pi agent 可能不发送 agent_end，在 assistant 消息完成时尝试自动命名
+          // pi agent 可能不发送 agent_end，在 assistant 消息完成时尝试自动命名和队列处理
           autoNameCurrentSession()
+          processInputQueue()
         }
         break
 
       case 'turn_end':
-        // turn 结束时也尝试自动命名（兼容不同事件模型）
+        // turn 结束时也尝试自动命名和队列处理（兼容不同事件模型）
         autoNameCurrentSession()
+        processInputQueue()
         break
 
       case 'tool_execution_start':
@@ -277,6 +281,27 @@ export function usePiAgent() {
     const app = getApp()
     if (!app) throw new Error('后端未就绪')
     return app.SendFollowUp(message)
+  }
+
+  // 处理输入队列：AI 回答结束后自动发送队列中下一条消息
+  let processingQueue = false
+  async function processInputQueue() {
+    if (processingQueue) {
+      console.log('[usePiAgent] 队列处理中，跳过重复调用')
+      return
+    }
+    processingQueue = true
+    try {
+      const nextMsg = store.dequeueInput()
+      if (!nextMsg) return
+      console.log('[usePiAgent] 队列取出消息:', nextMsg.slice(0, 30))
+      await sendPrompt(nextMsg)
+      console.log('[usePiAgent] 队列消息已发送')
+    } catch (e: any) {
+      console.error('[usePiAgent] 队列消息发送失败:', e)
+    } finally {
+      processingQueue = false
+    }
   }
 
   async function abort(): Promise<string> {

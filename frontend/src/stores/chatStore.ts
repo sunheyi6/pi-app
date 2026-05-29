@@ -24,6 +24,8 @@ export const useChatStore = defineStore('chat', () => {
   const currentToolCalls = ref<Map<string, { name: string; args: Record<string, any>; output: string; isError: boolean }>>(new Map())
   const pendingSteering = ref<string[]>([])
   const pendingFollowUp = ref<string[]>([])
+  // 消息输入队列：AI 回答期间用户输入的消息会排队，回答结束后自动发送
+  const inputQueue = ref<string[]>([])
   const appState = ref<AppState>({
     isStreaming: false,
     isCompacting: false,
@@ -207,6 +209,23 @@ export const useChatStore = defineStore('chat', () => {
     pendingFollowUp.value = list
   }
 
+  // ========== 输入队列 ==========
+  function enqueueInput(text: string) {
+    inputQueue.value.push(text)
+  }
+
+  function dequeueInput(): string | undefined {
+    return inputQueue.value.shift()
+  }
+
+  function clearInputQueue() {
+    inputQueue.value = []
+  }
+
+  function removeFromQueue(index: number) {
+    inputQueue.value.splice(index, 1)
+  }
+
   return {
     // 状态
     messages,
@@ -246,5 +265,12 @@ export const useChatStore = defineStore('chat', () => {
     updateAppState,
     setPendingSteering,
     setPendingFollowUp,
+
+    // 输入队列
+    inputQueue,
+    enqueueInput,
+    dequeueInput,
+    clearInputQueue,
+    removeFromQueue,
   }
 })

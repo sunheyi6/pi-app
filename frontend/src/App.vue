@@ -152,7 +152,7 @@ onUnmounted(() => {
         :show-welcome="showWelcome"
         :app-state="store.appState"
         @send="(msg: string) => piAgent.sendPrompt(msg).catch(e => log(`发送失败: ${e}`))"
-        @abort="piAgent.abort().catch(e => log(`中止失败: ${e}`))"
+        @abort="piAgent.abort().catch(e => log(`中止失败: ${e}`)); store.clearInputQueue()"
       />
     </div>
 

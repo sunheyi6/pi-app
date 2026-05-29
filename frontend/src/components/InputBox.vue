@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick, computed } from 'vue'
+import { useChatStore } from '../stores/chatStore'
 
 const props = defineProps<{
   isStreaming: boolean
@@ -11,6 +12,8 @@ const emit = defineEmits<{
   send: [message: string]
   abort: []
 }>()
+
+const store = useChatStore()
 
 const inputText = ref('')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
@@ -27,8 +30,20 @@ function handleSend() {
   const text = inputText.value.trim()
   if (!text || isSending.value) return
 
-  isSending.value = true
   lastSendTime = now
+
+  // AI 正在回答 → 消息入队列，不清空输入框
+  if (props.isStreaming || props.isAgentRunning) {
+    store.enqueueInput(text)
+    inputText.value = ''
+    nextTick(() => {
+      autoResize()
+      focusInput()
+    })
+    return
+  }
+
+  isSending.value = true
 
   // 安全超时：防止极端情况下 isSending 卡住
   if (sendingTimer) clearTimeout(sendingTimer)
@@ -102,7 +117,38 @@ onMounted(() => {
 <template>
   <div class="border-t border-gray-200 dark:border-white/5 bg-white dark:bg-[#0a0a0a] px-4 py-3 shrink-0">
     <div class="max-w-3xl mx-auto">
-      <!-- 待处理消息提示 -->
+      <!-- 输入队列提示 -->
+      <div
+        v-if="store.inputQueue.length > 0"
+        class="mb-2 flex flex-col gap-1"
+      >
+        <div
+          v-for="(item, idx) in store.inputQueue"
+          :key="idx"
+          class="text-[15px] text-amber-500 dark:text-amber-400 flex items-center gap-2 animate-fade-in
+                 bg-amber-500/5 rounded-lg px-3 py-1.5 border border-amber-500/10"
+        >
+          <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span class="flex-1 truncate">{{ item }}</span>
+          <span class="text-[10px] text-amber-500/50 shrink-0">#{{ idx + 1 }}</span>
+          <button
+            @click="store.removeFromQueue(idx)"
+            class="w-5 h-5 flex items-center justify-center rounded-full
+                   text-amber-500/40 hover:text-red-400 hover:bg-red-500/10
+                   transition-all duration-150 shrink-0"
+            title="移除此条"
+          >
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 待处理引导/跟进消息提示 -->
       <div
         v-if="pendingInfo"
         class="mb-2 text-[11px] text-yellow-400/80 flex items-center gap-1.5 animate-fade-in"
@@ -149,9 +195,8 @@ onMounted(() => {
           </svg>
         </button>
 
-        <!-- 发送按钮 -->
+        <!-- 发送按钮（始终显示，AI 回答时入队列） -->
         <button
-          v-else
           @click="handleSend"
           :disabled="!canSend"
           class="w-8 h-8 flex items-center justify-center rounded-full
@@ -159,7 +204,7 @@ onMounted(() => {
           :class="canSend
             ? 'bg-gray-900 hover:bg-gray-700 dark:bg-white dark:hover:bg-gray-200 text-white dark:text-black active:scale-90'
             : 'bg-gray-300 dark:bg-white/10 text-gray-400 dark:text-gray-600 cursor-not-allowed'"
-          title="发送 (Enter)"
+          :title="isStreaming ? '排队发送 (Enter)' : '发送 (Enter)'"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"

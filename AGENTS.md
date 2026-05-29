@@ -35,6 +35,19 @@
 - 当用户要求"启动项目/重启项目"时，完成标准是"启动成功"，不能只以"命令已执行"作为完成。
 - 启动后必须做运行态校验（至少包含：`wails` 进程存在、前端 dev server 可用/监听），校验通过后才能反馈完成。
 
+### 2026-05-29 - 消息输入队列
+- 需求：AI 回答期间用户输入不丢失，自动排队，回答结束后依次发送。
+- 修改文件：
+  - `frontend/src/stores/chatStore.ts`：新增 `inputQueue` 状态、`enqueueInput`/`dequeueInput`/`clearInputQueue` 方法。
+  - `frontend/src/components/InputBox.vue`：AI 繁忙时（`isStreaming`/`isAgentRunning`），发送不直接 emit，而是 `store.enqueueInput()`；发送按钮始终显示（不再被中止按钮替代）；输入框上方渲染队列列表。
+  - `frontend/src/composables/usePiAgent.ts`：`agent_end` 和 `turn_end` 事件中调用 `processInputQueue()`，自动从队列取出并发送下一条。
+  - `frontend/src/App.vue`：中止时调用 `store.clearInputQueue()` 清空队列。
+
+### 2026-05-29 - Shell 环境约定
+- pi 的 bash 工具底层运行在 Windows cmd 下，不支持直接使用 bash 语法（如 `&&`、`export` 等）。
+- **如需使用 Git Bash**，显式调用：`D:\soft\Git\bin\bash.exe -c "命令"`。
+- Git Bash 路径：`D:\soft\Git\bin\bash.exe`。
+
 ### 2026-05-28 - 实际可用的启动命令（cmd 环境）
 - 当前环境 bash 工具实际运行在 Windows cmd 下（非 Git Bash / WSL），命令须用 cmd 语法，连接命令用 `&` 而非 `&&`。
 - 关闭旧进程：先用 `tasklist | findstr /i wails` 检查，若有则 `taskkill /f /im wails.exe` 杀进程。
