@@ -45,8 +45,15 @@ onMounted(async () => {
     const appInfo = await piAgent.getAppInfo().catch(() => ({ homeDir: '' }))
     await piAgent.init(appInfo.homeDir || '')
     log('Agent 初始化完成')
+    store.requestFocusInput()
+    setTimeout(() => window.dispatchEvent(new Event('focus')), 200)
+    // 已有历史会话 → 自动恢复最近一次对话
     if (store.sessions.length > 0) {
+      const latest = store.sessions[0]
+      await piAgent.init(appInfo.homeDir || '', latest.filePath)
+      store.setCurrentSession(latest)
       showWelcome.value = false
+      log(`恢复会话: ${latest.displayName}`)
     }
   } catch (e: any) {
     startupError.value = `Agent 启动失败: ${e.message || e}`
@@ -61,6 +68,9 @@ async function handleNewChat() {
     store.clearMessages()
     showWelcome.value = true
     log('新建会话成功')
+    store.requestFocusInput()
+    // 复用切换 app 的聚焦逻辑：手动触发 window focus 事件
+    setTimeout(() => window.dispatchEvent(new Event('focus')), 150)
     // 更新当前会话为最新的那个
     if (store.sessions.length > 0) {
       store.setCurrentSession(store.sessions[0])
@@ -79,6 +89,8 @@ async function handleSelectSession(session: any) {
       const appInfo = await piAgent.getAppInfo().catch(() => ({ homeDir: '' }))
       await piAgent.init(appInfo.homeDir || '', session.filePath)
       log(`切换到会话: ${session.displayName}`)
+      store.requestFocusInput()
+      setTimeout(() => window.dispatchEvent(new Event('focus')), 150)
     } catch (e: any) {
       log(`切换会话失败: ${e.message || e}`)
     }

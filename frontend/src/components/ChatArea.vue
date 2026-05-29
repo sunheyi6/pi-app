@@ -22,8 +22,8 @@ const emit = defineEmits<{
 
 const store = useChatStore()
 const chatContainer = ref<HTMLElement | null>(null)
-const showThinking = ref(false)
-const showTools = ref(false)
+const showThinking = ref(true)
+const showTools = ref(true)
 const shouldAutoScroll = ref(true)
 const activeAnchor = ref<string | null>(null)
 
@@ -231,7 +231,7 @@ const pendingInfo = computed(() => {
             </template>
           </template>
 
-          <!-- 工具调用 -->
+          <!-- 工具调用（内嵌在助手消息中） -->
           <template v-if="showTools && msg.role === 'assistant'">
             <template v-for="(block, idx) in msg.content" :key="`tool-${msg.id}-${idx}`">
               <ToolCallCard
@@ -240,6 +240,18 @@ const pendingInfo = computed(() => {
                 :result="messages.find(m => m.role === 'toolResult' && m.toolCallId === (block as ToolCallContent).id)"
               />
             </template>
+          </template>
+
+          <!-- 独立的工具结果 / Bash 执行结果（当 showTools 关闭时也显示摘要） -->
+          <template v-if="msg.role === 'toolResult' || msg.role === 'bashExecution'">
+            <ToolCallCard
+              :tool-call="{
+                id: msg.toolCallId || '',
+                name: msg.toolName || (msg.role === 'bashExecution' ? 'bash' : '工具'),
+                arguments: msg.command ? { command: msg.command } : {}
+              }"
+              :result="msg"
+            />
           </template>
 
           <!-- 聊天消息 -->

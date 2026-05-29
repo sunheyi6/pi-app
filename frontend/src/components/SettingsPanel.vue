@@ -19,11 +19,12 @@ const models = ref<ModelInfo[]>([])
 const loading = ref(false)
 
 // 左侧导航菜单
-type SettingsTab = 'model' | 'theme' | 'thinking'
+type SettingsTab = 'model' | 'apikey' | 'thinking' | 'theme'
 const activeTab = ref<SettingsTab>('model')
 
 const tabs: { key: SettingsTab; label: string; icon: string }[] = [
   { key: 'model',    label: '模型选择', icon: '🤖' },
+  { key: 'apikey',   label: 'API 密钥', icon: '🔑' },
   { key: 'thinking', label: '思考级别', icon: '🧠' },
   { key: 'theme',    label: '主题外观', icon: '🎨' },
 ]
@@ -46,6 +47,7 @@ const thinkingLevels: { value: ThinkingLevel; label: string; desc: string }[] = 
 onMounted(async () => {
   loading.value = true
   models.value = await piAgent.getAvailableModels()
+  await loadAuthKeys()
   loading.value = false
 })
 
@@ -59,6 +61,72 @@ async function selectThinkingLevel(level: ThinkingLevel) {
 
 // 当前选中的模型和思考级别（通过外部事件监听来更新，这里简单处理）
 // 实际上可以从 store 读取，但为了让 Panel 自包含，通过 props 或 store 获取
+
+// ========== API Key 管理 ==========
+const authKeys = ref<Record<string, string>>({})
+const editingProvider = ref<string | null>(null)
+const editingKey = ref('')
+const savingProvider = ref<string | null>(null)
+const saveError = ref('')
+
+// provider → auth.json key 映射
+const providerAuthMap: Record<string, string> = {
+  anthropic: 'anthropic',
+  openai: 'openai',
+  deepseek: 'deepseek',
+  google: 'google',
+  groq: 'groq',
+  openrouter: 'openrouter',
+  xai: 'xai',
+  mistral: 'mistral',
+  cerebras: 'cerebras',
+  together: 'together',
+  'kimi-coding': 'kimi-coding',
+  minimax: 'minimax',
+  'vercel-ai-gateway': 'vercel-ai-gateway',
+  'cloudflare-ai-gateway': 'cloudflare-ai-gateway',
+}
+
+async function loadAuthKeys() {
+  authKeys.value = await piAgent.getAuthKeys()
+}
+
+function startEdit(provider: string) {
+  editingProvider.value = provider
+  editingKey.value = ''
+  saveError.value = ''
+}
+
+function cancelEdit() {
+  editingProvider.value = null
+  editingKey.value = ''
+  saveError.value = ''
+}
+
+async function saveKey(provider: string) {
+  const authKey = providerAuthMap[provider]
+  if (!authKey) return
+
+  savingProvider.value = provider
+  saveError.value = ''
+
+  const ok = await piAgent.setApiKey(authKey, editingKey.value)
+  if (ok) {
+    editingProvider.value = null
+    editingKey.value = ''
+    await loadAuthKeys()
+  } else {
+    saveError.value = '保存失败，请重试'
+  }
+  savingProvider.value = null
+}
+
+async function deleteKey(provider: string) {
+  const authKey = providerAuthMap[provider]
+  if (!authKey) return
+  await piAgent.setApiKey(authKey, '')
+  await loadAuthKeys()
+}
 </script>
 
 <template>
@@ -140,6 +208,95 @@ async function selectThinkingLevel(level: ThinkingLevel) {
                 <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
               </svg>
             </button>
+          </div>
+        </div>
+
+        <!-- API Key -->
+        <div v-if="activeTab === 'apikey'">
+          <div class="text-[11px] text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">
+            API 密钥
+          </div>
+          <p class="text-[12px] text-gray-400 dark:text-gray-500 mb-4">
+            配置各模型的 API Key，保存至 <code class="text-[11px] bg-gray-100 dark:bg-white/[0.06] px-1 rounded">~/.pi/agent/auth.json</code>
+          </p>
+          <div v-if="saveError" class="text-[12px] text-red-400 mb-3">{{ saveError }}</div>
+          <div v-if="models.length === 0" class="text-sm text-gray-400 dark:text-gray-500 py-4 text-center">
+            尚未加载模型列表
+          </div>
+          <div v-else class="space-y-1">
+            <div
+              v-for="m in models"
+              :key="m.id"
+              class="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-white/[0.04]"
+            >
+              <div class="flex-1 min-w-0">
+                <div class="text-[13px] text-gray-900 dark:text-white">{{ m.name }}</div>
+                <div class="text-[11px] text-gray-400 dark:text-gray-500">{{ m.provider }}</div>
+              </div>
+
+              <!-- 已配置 key -->
+              <template v-if="editingProvider === m.provider">
+                <div class="flex items-center gap-1.5">
+                  <input
+                    v-model="editingKey"
+                    type="password"
+                    placeholder="输入 API Key"
+                    class="w-40 text-[12px] px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/[0.1]
+                           bg-gray-50 dark:bg-white/[0.04] text-gray-900 dark:text-white
+                           placeholder-gray-400 outline-none focus:border-blue-400"
+                    @keydown.enter="m.provider && saveKey(m.provider)"
+                    @keydown.escape="cancelEdit"
+                  />
+                  <button
+                    @click="m.provider && saveKey(m.provider)"
+                    :disabled="savingProvider === m.provider"
+                    class="text-[11px] px-2.5 py-1.5 rounded-lg bg-blue-500 text-white hover:bg-blue-600
+                           disabled:opacity-50 transition-colors"
+                  >
+                    {{ savingProvider === m.provider ? '保存中…' : '保存' }}
+                  </button>
+                  <button
+                    @click="cancelEdit"
+                    class="w-6 h-6 flex items-center justify-center rounded-full
+                           text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </template>
+
+              <!-- 已配置 -->
+              <template v-else-if="authKeys[m.provider]">
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] text-green-500 dark:text-green-400 font-mono">{{ authKeys[m.provider] }}</span>
+                  <button
+                    @click="startEdit(m.provider)"
+                    class="text-[11px] px-2 py-1 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
+                  >
+                    修改
+                  </button>
+                  <button
+                    @click="m.provider && deleteKey(m.provider)"
+                    class="text-[11px] px-2 py-1 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                  >
+                    删除
+                  </button>
+                </div>
+              </template>
+
+              <!-- 未配置 -->
+              <button
+                v-else
+                @click="startEdit(m.provider)"
+                class="text-[11px] px-2.5 py-1.5 rounded-lg text-gray-400 hover:text-blue-400
+                       hover:bg-blue-500/10 border border-dashed border-gray-300 dark:border-white/[0.1]
+                       transition-colors"
+              >
+                设置 Key
+              </button>
+            </div>
           </div>
         </div>
 

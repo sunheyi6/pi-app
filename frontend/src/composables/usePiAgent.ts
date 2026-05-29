@@ -87,6 +87,9 @@ export function usePiAgent() {
           toolCallId: m.toolCallId,
           toolName: m.toolName,
           isError: m.isError,
+          command: m.command,
+          output: m.output,
+          exitCode: m.exitCode,
         })
       }
     } catch (e) {
@@ -410,6 +413,30 @@ export function usePiAgent() {
     }
   }
 
+  // ========== API Key 管理 ==========
+  async function getAuthKeys(): Promise<Record<string, string>> {
+    const app = getApp()
+    if (!app) return {}
+    try {
+      const json = await app.GetAuthKeys()
+      return JSON.parse(json)
+    } catch {
+      return {}
+    }
+  }
+
+  async function setApiKey(provider: string, key: string): Promise<boolean> {
+    const app = getApp()
+    if (!app) return false
+    try {
+      const json = await app.SetApiKey(provider, key)
+      const result = JSON.parse(json)
+      return result.success === true
+    } catch {
+      return false
+    }
+  }
+
   // ========== 生命周期 ==========
   // 只有第一个调用者（App.vue）注册全局生命周期
   const isRoot = !eventListenerStarted
@@ -442,5 +469,7 @@ export function usePiAgent() {
     getAvailableModels,
     selectDirectory,
     getAppInfo,
+    getAuthKeys,
+    setApiKey,
   }
 }

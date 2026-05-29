@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick, computed } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { useChatStore } from '../stores/chatStore'
 
 const props = defineProps<{
@@ -32,8 +32,9 @@ function handleSend() {
 
   lastSendTime = now
 
-  // AI 正在回答 → 消息入队列，不清空输入框
-  if (props.isStreaming || props.isAgentRunning) {
+  // AI 正在回答 → 消息入队列
+  // 兜底保护：如果没有实际流式消息 ID，说明状态异常，直接发送
+  if ((props.isStreaming || props.isAgentRunning) && store.streamingMessageId) {
     store.enqueueInput(text)
     inputText.value = ''
     nextTick(() => {
@@ -110,7 +111,22 @@ function handleContainerClick(e: MouseEvent) {
 }
 
 onMounted(() => {
-  focusInput()
+  // WebView2 渲染较慢，双重延迟确保 DOM 就绪
+  nextTick(() => {
+    setTimeout(() => focusInput(), 100)
+  })
+  window.addEventListener('focus', focusInput)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('focus', focusInput)
+})
+
+// 监听聚焦请求（新建会话、启动完成等场景）
+watch(() => store.focusInputCounter, () => {
+  nextTick(() => {
+    setTimeout(() => focusInput(), 100)
+  })
 })
 </script>
 

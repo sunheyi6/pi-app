@@ -26,6 +26,8 @@ export const useChatStore = defineStore('chat', () => {
   const pendingFollowUp = ref<string[]>([])
   // 消息输入队列：AI 回答期间用户输入的消息会排队，回答结束后自动发送
   const inputQueue = ref<string[]>([])
+  // 输入框聚焦触发器：递增时 InputBox 自动聚焦
+  const focusInputCounter = ref(0)
   const appState = ref<AppState>({
     isStreaming: false,
     isCompacting: false,
@@ -226,6 +228,11 @@ export const useChatStore = defineStore('chat', () => {
     inputQueue.value.splice(index, 1)
   }
 
+  // ========== 输入框聚焦 ==========
+  function requestFocusInput() {
+    focusInputCounter.value++
+  }
+
   return {
     // 状态
     messages,
@@ -272,5 +279,9 @@ export const useChatStore = defineStore('chat', () => {
     dequeueInput,
     clearInputQueue,
     removeFromQueue,
+
+    // 聚焦
+    focusInputCounter,
+    requestFocusInput,
   }
 })

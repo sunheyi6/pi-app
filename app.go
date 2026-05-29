@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"pi-desktop/backend/piagent"
 	goruntime "runtime"
 	"strings"
@@ -548,6 +549,95 @@ func (a *App) GetAppInfo() string {
 
 	b, _ := json.Marshal(info)
 	return string(b)
+}
+
+// AuthEntry API key 条目
+type AuthEntry struct {
+	Type string `json:"type"`
+	Key  string `json:"key"`
+}
+
+// GetAuthKeys 获取所有已配置的 API key（脱敏显示）
+func (a *App) GetAuthKeys() string {
+	authPath := a.getAuthPath()
+	data, err := os.ReadFile(authPath)
+	if err != nil {
+		return "{}"
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return "{}"
+	}
+
+	result := make(map[string]string)
+	for provider, entryData := range raw {
+		var entry AuthEntry
+		if err := json.Unmarshal(entryData, &entry); err != nil {
+			continue
+		}
+		if entry.Type == "api_key" && entry.Key != "" {
+			// 脱敏：只显示前4位和后4位
+			key := entry.Key
+			if len(key) > 12 {
+				key = key[:4] + "****" + key[len(key)-4:]
+			} else if len(key) > 0 {
+				key = key[:1] + "****"
+			}
+			result[provider] = key
+		}
+	}
+
+	b, _ := json.Marshal(result)
+	return string(b)
+}
+
+// SetApiKey 设置指定 provider 的 API key
+func (a *App) SetApiKey(provider string, key string) string {
+	authPath := a.getAuthPath()
+
+	// 读取现有配置
+	authData := make(map[string]AuthEntry)
+	if data, err := os.ReadFile(authPath); err == nil {
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(data, &raw); err == nil {
+			for p, entryData := range raw {
+				var entry AuthEntry
+				if err := json.Unmarshal(entryData, &entry); err == nil {
+					authData[p] = entry
+				}
+			}
+		}
+	}
+
+	// 如果 key 为空，删除该 provider
+	if key == "" {
+		delete(authData, provider)
+	} else {
+		authData[provider] = AuthEntry{
+			Type: "api_key",
+			Key:  key,
+		}
+	}
+
+	// 确保目录存在
+	if err := os.MkdirAll(filepath.Dir(authPath), 0o700); err != nil {
+		return fmt.Sprintf(`{"success":false,"error":"%s"}`, err.Error())
+	}
+
+	// 写入文件（0600 权限）
+	b, _ := json.MarshalIndent(authData, "", "  ")
+	if err := os.WriteFile(authPath, b, 0o600); err != nil {
+		return fmt.Sprintf(`{"success":false,"error":"%s"}`, err.Error())
+	}
+
+	return `{"success":true}`
+}
+
+// getAuthPath 获取 auth.json 路径
+func (a *App) getAuthPath() string {
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".pi", "agent", "auth.json")
 }
 
 // 确保路径存在
