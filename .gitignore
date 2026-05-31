@@ -27,3 +27,6 @@ frontend/src/lib/
 
 # Cache
 *.md5
+
+# Local worktrees
+.worktrees/
