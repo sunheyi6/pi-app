@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 
 const props = defineProps<{
   content: string
   isStreaming?: boolean
 }>()
 
-const expanded = ref(true)
+const expanded = ref(false)
+
+// 流式思考期间自动展开，结束后保持折叠
+watch(() => props.isStreaming, (streaming) => {
+  if (streaming) expanded.value = true
+})
 
 const displayContent = computed(() => {
   if (!props.content) return ''
