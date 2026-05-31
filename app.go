@@ -336,6 +336,25 @@ func (a *App) Abort() (string, error) {
 }
 
 // SetModel 切换模型
+// RespondToExtensionUI resolves a blocking extension dialog in RPC mode.
+func (a *App) RespondToExtensionUI(id string, value string, confirmed bool, cancelled bool) error {
+	a.mu.Lock()
+	client := a.client
+	a.mu.Unlock()
+
+	if client == nil {
+		return fmt.Errorf("agent 未启动")
+	}
+	return client.SendCommandAsync(piagent.RPCCommand{
+		ID:        id,
+		Type:      "extension_ui_response",
+		Value:     value,
+		Confirmed: &confirmed,
+		Cancelled: cancelled,
+	})
+}
+
+// SetModel switches the active model.
 func (a *App) SetModel(provider string, modelId string) (string, error) {
 	a.mu.Lock()
 	client := a.client
