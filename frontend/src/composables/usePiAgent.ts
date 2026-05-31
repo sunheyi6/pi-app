@@ -84,8 +84,8 @@ export function usePiAgent() {
       const json = await app.GetMessagesFromFile(sessionPath)
       const data = JSON.parse(json)
       const msgs = data.messages || []
-      if (msgs.length === 0) return false
       store.clearMessages()
+      if (msgs.length === 0) return true
       for (const m of msgs) {
         store.addMessage({
           id: m.id || `hist-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,

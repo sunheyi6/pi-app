@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import Sidebar from './components/Sidebar.vue'
 import ChatArea from './components/ChatArea.vue'
@@ -47,12 +47,19 @@ onMounted(async () => {
     log('Agent 初始化完成')
     store.requestFocusInput()
     setTimeout(() => window.dispatchEvent(new Event('focus')), 200)
+    // 等待会话列表加载完成后再检查
+    await piAgent.loadSessions()
     // 已有历史会话 → 自动恢复最近一次对话
     if (store.sessions.length > 0) {
       const latest = store.sessions[0]
-      await piAgent.init(appInfo.homeDir || '', latest.filePath)
       store.setCurrentSession(latest)
       showWelcome.value = false
+      // 加载最近会话的消息
+      if (!store.loadCachedSession(latest.filePath)) {
+        await piAgent.loadMessagesFromFile(latest.filePath)
+      }
+      // 后台切换 pi 到该会话
+      piAgent.switchSessionInBackground(appInfo.homeDir || '', latest.filePath)
       log(`恢复会话: ${latest.displayName}`)
     }
   } catch (e: any) {
@@ -95,20 +102,16 @@ async function handleSelectSession(session: any) {
 
     store.setCurrentSession(session)
 
-    // 从缓存或文件加载消息（即时显示）
-    const loaded = !store.loadCachedSession(session.filePath)
-      ? await piAgent.loadMessagesFromFile(session.filePath).catch(() => false)
-      : undefined
-
-    // 确保 pi 子进程已切换到当前会话上下文
-    const appInfo = await piAgent.getAppInfo().catch(() => ({ homeDir: '' }))
-    if (loaded === false) {
-      // 缓存未命中且文件读取失败：同步走 pi RPC 加载
-      await piAgent.init(appInfo.homeDir || '', session.filePath)
-    } else {
-      // 缓存命中或文件读取成功：后台切换 pi（不阻塞）
-      piAgent.switchSessionInBackground(appInfo.homeDir || '', session.filePath)
+    // 从缓存加载消息（即时显示）
+    const cacheHit = store.loadCachedSession(session.filePath)
+    if (!cacheHit) {
+      // 缓存未命中，从文件加载
+      await piAgent.loadMessagesFromFile(session.filePath).catch(() => {})
     }
+
+    // 确保 pi 子进程已切换到当前会话上下文（后台执行，不阻塞）
+    const appInfo = await piAgent.getAppInfo().catch(() => ({ homeDir: '' }))
+    piAgent.switchSessionInBackground(appInfo.homeDir || '', session.filePath)
 
     log(`切换到会话: ${session.displayName}`)
     store.requestFocusInput()
