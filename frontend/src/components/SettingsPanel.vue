@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { usePiAgent } from '../composables/usePiAgent'
 import { useThemeStore, type ThemeMode } from '../stores/themeStore'
 import type { ModelInfo, ThinkingLevel } from '../types'
+import ExtensionPackagesPanel from './ExtensionPackagesPanel.vue'
 
 const props = defineProps<{
   model: ModelInfo | null
@@ -19,7 +20,7 @@ const models = ref<ModelInfo[]>([])
 const loading = ref(false)
 
 // 左侧导航菜单
-type SettingsTab = 'model' | 'apikey' | 'thinking' | 'theme'
+type SettingsTab = 'model' | 'apikey' | 'thinking' | 'theme' | 'extensions'
 const activeTab = ref<SettingsTab>('model')
 
 const tabs: { key: SettingsTab; label: string; icon: string }[] = [
@@ -27,6 +28,7 @@ const tabs: { key: SettingsTab; label: string; icon: string }[] = [
   { key: 'apikey',   label: 'API 密钥', icon: '🔑' },
   { key: 'thinking', label: '思考级别', icon: '🧠' },
   { key: 'theme',    label: '主题外观', icon: '🎨' },
+  { key: 'extensions', label: '扩展包', icon: '＋' },
 ]
 
 const themeOptions: { value: ThemeMode; label: string; icon: string }[] = [
@@ -356,6 +358,8 @@ async function deleteKey(provider: string) {
             </button>
           </div>
         </div>
+
+        <ExtensionPackagesPanel v-if="activeTab === 'extensions'" />
       </div>
     </div>
   </div>

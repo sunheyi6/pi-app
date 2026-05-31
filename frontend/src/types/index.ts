@@ -144,6 +144,22 @@ export interface CommandInfo {
   path?: string
 }
 
+export type PackageScope = 'project' | 'global'
+
+export interface PackageInfo {
+  source: string
+  scope: PackageScope
+  type: string
+  raw?: string
+}
+
+export interface PackageActionResult {
+  output?: string
+  packages?: PackageInfo[]
+  restarted?: boolean
+  restartError?: string
+}
+
 // 应用状态
 export interface AppState {
   isStreaming: boolean

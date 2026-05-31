@@ -34,6 +34,13 @@ declare global {
           GetAppInfo(): Promise<string>
           GetAuthKeys(): Promise<string>
           SetApiKey(provider: string, key: string): Promise<string>
+          ListPackages(scope: string): Promise<string>
+          InstallPackage(source: string, scope: string): Promise<string>
+          RemovePackage(source: string, scope: string): Promise<string>
+          UpdatePackage(source: string): Promise<string>
+          UpdateAllPackages(): Promise<string>
+          RetryAgentStartup(): Promise<void>
+          RespondToExtensionUI(id: string, value: string, confirmed: boolean, cancelled: boolean): Promise<void>
         }
       }
     }

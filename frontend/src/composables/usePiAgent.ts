@@ -1,6 +1,6 @@
 import { onMounted, onUnmounted } from 'vue'
 import { useChatStore } from '../stores/chatStore'
-import type { RPCEvent, ModelInfo, SessionInfo } from '../types'
+import type { RPCEvent, ModelInfo, SessionInfo, PackageActionResult, PackageInfo, PackageScope } from '../types'
 
 // 模块级标志：防止事件监听器被注册多次
 let eventListenerStarted = false
@@ -437,6 +437,44 @@ export function usePiAgent() {
     }
   }
 
+  // ========== 扩展包管理 ==========
+  async function listPackages(scope: PackageScope): Promise<PackageInfo[]> {
+    const app = getApp()
+    if (!app) return []
+    const json = await app.ListPackages(scope)
+    return JSON.parse(json).packages || []
+  }
+
+  async function installPackage(source: string, scope: PackageScope): Promise<PackageActionResult> {
+    const app = getApp()
+    if (!app) throw new Error('后端未就绪')
+    return JSON.parse(await app.InstallPackage(source, scope))
+  }
+
+  async function removePackage(source: string, scope: PackageScope): Promise<PackageActionResult> {
+    const app = getApp()
+    if (!app) throw new Error('后端未就绪')
+    return JSON.parse(await app.RemovePackage(source, scope))
+  }
+
+  async function updatePackage(source: string): Promise<PackageActionResult> {
+    const app = getApp()
+    if (!app) throw new Error('后端未就绪')
+    return JSON.parse(await app.UpdatePackage(source))
+  }
+
+  async function updateAllPackages(): Promise<PackageActionResult> {
+    const app = getApp()
+    if (!app) throw new Error('后端未就绪')
+    return JSON.parse(await app.UpdateAllPackages())
+  }
+
+  async function retryAgentStartup(): Promise<void> {
+    const app = getApp()
+    if (!app) throw new Error('后端未就绪')
+    await app.RetryAgentStartup()
+  }
+
   // ========== 生命周期 ==========
   // 只有第一个调用者（App.vue）注册全局生命周期
   const isRoot = !eventListenerStarted
@@ -471,5 +509,11 @@ export function usePiAgent() {
     getAppInfo,
     getAuthKeys,
     setApiKey,
+    listPackages,
+    installPackage,
+    removePackage,
+    updatePackage,
+    updateAllPackages,
+    retryAgentStartup,
   }
 }
