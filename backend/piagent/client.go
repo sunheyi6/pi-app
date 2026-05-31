@@ -90,11 +90,7 @@ func resolvePiExecutable() (string, error) {
 	// Fallback for Windows + pnpm global install location.
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
-		for _, p := range []string{
-			filepath.Join(homeDir, "AppData", "Local", "pnpm", "pi.CMD"),
-			filepath.Join(homeDir, "AppData", "Local", "pnpm", "pi.cmd"),
-			filepath.Join(homeDir, "AppData", "Local", "pnpm", "pi"),
-		} {
+		for _, p := range piExecutableCandidates(homeDir) {
 			if _, statErr := os.Stat(p); statErr == nil {
 				return p, nil
 			}
