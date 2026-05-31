@@ -414,8 +414,16 @@ func (a *App) GetState() (string, error) {
 	return string(resp), nil
 }
 
-// GetMessages 获取所有消息
+// GetMessages 获取所有消息（优先从文件缓存读取）
 func (a *App) GetMessages() (string, error) {
+	// 优先从直接文件缓存读取（不走 pi RPC，更快）
+	if a.activeSessionPath != "" {
+		if cached, ok := a.sessions.GetCachedMessages(a.activeSessionPath); ok {
+			b, _ := json.Marshal(map[string]any{"messages": cached})
+			return string(b), nil
+		}
+	}
+
 	a.mu.Lock()
 	client := a.client
 	a.mu.Unlock()
@@ -431,6 +439,43 @@ func (a *App) GetMessages() (string, error) {
 		return "", err
 	}
 	return string(resp), nil
+}
+
+// GetMessagesFromFile 直接从 JSONL 文件读取消息（不经过 pi RPC）
+func (a *App) GetMessagesFromFile(sessionPath string) string {
+	cached, ok := a.sessions.GetCachedMessages(sessionPath)
+	if !ok {
+		// 缓存未命中，直接读文件并缓存
+		msgs, err := a.sessions.LoadMessagesFromFile(sessionPath)
+		if err != nil {
+			return `{"messages":[]}`
+		}
+		b, _ := json.Marshal(map[string]any{"messages": msgs})
+		return string(b)
+	}
+	b, _ := json.Marshal(map[string]any{"messages": cached})
+	return string(b)
+}
+
+// PreloadRecentSessions 预加载最近 N 个会话的消息到内存
+func (a *App) PreloadRecentSessions(count int) string {
+	sessions, err := a.sessions.ListSessions(a.curCwd)
+	if err != nil || len(sessions) == 0 {
+		return `{"preloaded":0}`
+	}
+
+	if count > len(sessions) {
+		count = len(sessions)
+	}
+
+	paths := make([]string, count)
+	for i := 0; i < count; i++ {
+		paths[i] = sessions[i].FilePath
+	}
+
+	go a.sessions.PreloadSessions(paths) // 后台并发加载
+
+	return fmt.Sprintf(`{"preloaded":%d}`, count)
 }
 
 // NewSession 创建新会话
@@ -449,6 +494,8 @@ func (a *App) NewSession() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// 新会话创建后，使会话列表缓存失效
+	a.sessions.InvalidateCache()
 	return string(resp), nil
 }
 

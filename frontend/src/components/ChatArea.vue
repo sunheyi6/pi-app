@@ -24,6 +24,7 @@ const store = useChatStore()
 const chatContainer = ref<HTMLElement | null>(null)
 const showThinking = ref(true)
 const showTools = ref(true)
+const showDirectory = ref(false)
 const shouldAutoScroll = ref(true)
 const activeAnchor = ref<string | null>(null)
 
@@ -122,6 +123,40 @@ function handleAbort() {
   emit('abort')
 }
 
+// ========== 工具调用折叠 ==========
+
+// 折叠状态下应隐藏的 toolCall ID 集合
+const collapsedToolCallIds = computed(() => {
+  const ids = new Set<string>()
+  for (const msg of props.messages) {
+    if (msg.role === 'assistant' && store.isMessageCollapsed(msg.id)) {
+      for (const c of msg.content) {
+        if (c.type === 'toolCall') ids.add((c as ToolCallContent).id)
+      }
+    }
+  }
+  return ids
+})
+
+// 每条助手消息的折叠工具数量
+const collapsedInfo = computed(() => {
+  const map = new Map<string, { count: number }>()
+  for (const msg of props.messages) {
+    if (msg.role === 'assistant' && store.isMessageCollapsed(msg.id)) {
+      let count = msg.content.filter(c => c.type === 'toolCall').length
+      // 加上关联的工具结果消息
+      const toolCallIds = msg.content
+        .filter(c => c.type === 'toolCall')
+        .map(c => (c as any).id)
+      count += props.messages.filter(
+        m => m.role === 'toolResult' && toolCallIds.includes(m.toolCallId || ''),
+      ).length
+      map.set(msg.id, { count })
+    }
+  }
+  return map
+})
+
 const pendingInfo = computed(() => {
   const parts: string[] = []
   if (store.pendingSteering.length > 0) parts.push(`${store.pendingSteering.length} 条引导消息`)
@@ -151,6 +186,13 @@ const pendingInfo = computed(() => {
             ? 'bg-blue-500/15 text-blue-500 dark:text-blue-400'
             : 'text-gray-400 dark:text-gray-600 hover:text-gray-600 dark:hover:text-gray-400 hover:bg-gray-200 dark:hover:bg-white/[0.04]'"
         >工具</button>
+        <button
+          @click="showDirectory = !showDirectory"
+          class="text-[11px] px-2.5 py-1.5 rounded-full transition-all duration-200"
+          :class="showDirectory
+            ? 'bg-green-500/15 text-green-500 dark:text-green-400'
+            : 'text-gray-400 dark:text-gray-600 hover:text-gray-600 dark:hover:text-gray-400 hover:bg-gray-200 dark:hover:bg-white/[0.04]'"
+        >目录</button>
 
         <span v-if="appState.messageCount > 0" class="text-[10px] text-gray-400 dark:text-gray-600 ml-2">
           {{ appState.messageCount }} 条
@@ -231,8 +273,8 @@ const pendingInfo = computed(() => {
             </template>
           </template>
 
-          <!-- 工具调用（内嵌在助手消息中） -->
-          <template v-if="showTools && msg.role === 'assistant'">
+          <!-- 工具调用（回答完成后折叠） -->
+          <template v-if="showTools && msg.role === 'assistant' && !store.isMessageCollapsed(msg.id)">
             <template v-for="(block, idx) in msg.content" :key="`tool-${msg.id}-${idx}`">
               <ToolCallCard
                 v-if="block.type === 'toolCall'"
@@ -242,8 +284,8 @@ const pendingInfo = computed(() => {
             </template>
           </template>
 
-          <!-- 独立的工具结果 / Bash 执行结果（当 showTools 关闭时也显示摘要） -->
-          <template v-if="msg.role === 'toolResult' || msg.role === 'bashExecution'">
+          <!-- 独立的工具结果 / Bash 执行结果（关联消息折叠时隐藏） -->
+          <template v-if="(msg.role === 'toolResult' || msg.role === 'bashExecution') && !collapsedToolCallIds.has(msg.toolCallId || '')">
             <ToolCallCard
               :tool-call="{
                 id: msg.toolCallId || '',
@@ -253,6 +295,13 @@ const pendingInfo = computed(() => {
               :result="msg"
             />
           </template>
+
+          <!-- 流式思考：紧贴当前流式消息，位于答案文本之前 -->
+          <ThinkingBlock
+            v-if="showThinking && store.currentThinkingBlock && isStreaming && msg.id === store.streamingMessageId"
+            :content="store.currentThinkingBlock"
+            :is-streaming="true"
+          />
 
           <!-- 聊天消息 -->
           <div
@@ -264,21 +313,33 @@ const pendingInfo = computed(() => {
               :message="msg"
               :is-streaming="msg.id === store.streamingMessageId && isStreaming"
             />
+
+            <!-- 折叠的工具调用展开按钮 -->
+            <div
+              v-if="msg.role === 'assistant' && store.isMessageCollapsed(msg.id) && collapsedInfo.get(msg.id)?.count"
+              class="mt-1"
+            >
+              <button
+                @click="store.expandAssistantMessage(msg.id)"
+                class="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-500
+                       dark:text-gray-600 dark:hover:text-gray-400 transition-colors
+                       py-0.5 rounded"
+              >
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+                <span>工具调用 · {{ collapsedInfo.get(msg.id)!.count }} 步</span>
+              </button>
+            </div>
           </div>
         </template>
 
-        <!-- 流式思考 -->
-        <ThinkingBlock
-          v-if="showThinking && store.currentThinkingBlock && isStreaming"
-          :content="store.currentThinkingBlock"
-          :is-streaming="true"
-        />
       </div>
     </div>
 
       <!-- 右侧悬浮对话目录 -->
       <div
-        v-if="userMessages.length > 1"
+        v-if="showDirectory && userMessages.length > 1"
         class="w-44 shrink-0 overflow-y-auto border-l border-gray-100 dark:border-white/[0.04]
                bg-gray-50/50 dark:bg-[#0a0a0a]/50 py-3 px-2"
       >

@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import Sidebar from './components/Sidebar.vue'
 import ChatArea from './components/ChatArea.vue'
@@ -64,14 +64,17 @@ onMounted(async () => {
 
 async function handleNewChat() {
   try {
+    // 缓存当前会话消息
+    const curPath = store.currentSession?.filePath
+    if (curPath) {
+      store.cacheCurrentSession(curPath)
+    }
     await piAgent.newSession()
     store.clearMessages()
     showWelcome.value = true
     log('新建会话成功')
     store.requestFocusInput()
-    // 复用切换 app 的聚焦逻辑：手动触发 window focus 事件
     setTimeout(() => window.dispatchEvent(new Event('focus')), 150)
-    // 更新当前会话为最新的那个
     if (store.sessions.length > 0) {
       store.setCurrentSession(store.sessions[0])
     }
@@ -81,19 +84,37 @@ async function handleNewChat() {
 }
 
 async function handleSelectSession(session: any) {
-  showWelcome.value = false
-  store.clearMessages()
-  store.setCurrentSession(session)
-  if (session.filePath) {
-    try {
-      const appInfo = await piAgent.getAppInfo().catch(() => ({ homeDir: '' }))
-      await piAgent.init(appInfo.homeDir || '', session.filePath)
-      log(`切换到会话: ${session.displayName}`)
-      store.requestFocusInput()
-      setTimeout(() => window.dispatchEvent(new Event('focus')), 150)
-    } catch (e: any) {
-      log(`切换会话失败: ${e.message || e}`)
+  try {
+    showWelcome.value = false
+
+    // 缓存当前会话消息，以便切换回来时即时恢复
+    const curPath = store.currentSession?.filePath
+    if (curPath) {
+      store.cacheCurrentSession(curPath)
     }
+
+    store.setCurrentSession(session)
+
+    // 从缓存或文件加载消息（即时显示）
+    const loaded = !store.loadCachedSession(session.filePath)
+      ? await piAgent.loadMessagesFromFile(session.filePath).catch(() => false)
+      : undefined
+
+    // 确保 pi 子进程已切换到当前会话上下文
+    const appInfo = await piAgent.getAppInfo().catch(() => ({ homeDir: '' }))
+    if (loaded === false) {
+      // 缓存未命中且文件读取失败：同步走 pi RPC 加载
+      await piAgent.init(appInfo.homeDir || '', session.filePath)
+    } else {
+      // 缓存命中或文件读取成功：后台切换 pi（不阻塞）
+      piAgent.switchSessionInBackground(appInfo.homeDir || '', session.filePath)
+    }
+
+    log(`切换到会话: ${session.displayName}`)
+    store.requestFocusInput()
+    setTimeout(() => window.dispatchEvent(new Event('focus')), 150)
+  } catch (e: any) {
+    log(`切换会话失败: ${e.message || e}`)
   }
 }
 
@@ -177,3 +198,6 @@ onUnmounted(() => {
     />
   </div>
 </template>
+
+
+

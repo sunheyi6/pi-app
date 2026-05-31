@@ -29,18 +29,29 @@ export function usePiAgent() {
       await app.StartAgent(cwd, sessionPath || '')
       console.log('[usePiAgent] Agent 已启动, session=', sessionPath || '(new)')
 
-      // 获取当前状态并更新 store
-      await refreshState()
-      // 如果有会话文件，加载历史消息
+      // 并行：获取状态 + 加载消息（关键路径）
+      const criticalPromises: Promise<any>[] = [refreshState()]
       if (sessionPath) {
-        await loadMessages()
+        criticalPromises.push(loadMessages())
       }
-      // 刷新侧边栏会话列表
-      await loadSessions()
+      await Promise.all(criticalPromises)
+
+      // 非关键路径：延迟刷新侧边栏列表，不阻塞消息显示
+      loadSessions()
     } catch (err) {
       console.error('[usePiAgent] 启动 Agent 失败:', err)
       throw err
     }
+  }
+
+  // 后台切换会话：不阻塞 UI，pi 静默重启后同步
+  function switchSessionInBackground(cwd: string, sessionPath: string) {
+    init(cwd, sessionPath).then(() => {
+      // pi 就绪后更新缓存（消息已在 init 中加载到 store）
+      if (sessionPath) store.cacheCurrentSession(sessionPath)
+    }).catch((err) => {
+      console.error('[usePiAgent] 后台切换会话失败:', err)
+    })
   }
 
   // 刷新当前会话状态
@@ -62,6 +73,43 @@ export function usePiAgent() {
       })
     } catch (e) {
       // 状态获取失败不阻塞
+    }
+  }
+
+  // 从指定文件直接读取消息（不经过 pi RPC，即时显示）
+  async function loadMessagesFromFile(sessionPath: string): Promise<boolean> {
+    const app = getApp()
+    if (!app) return false
+    try {
+      const json = await app.GetMessagesFromFile(sessionPath)
+      const data = JSON.parse(json)
+      const msgs = data.messages || []
+      if (msgs.length === 0) return false
+      store.clearMessages()
+      for (const m of msgs) {
+        store.addMessage({
+          id: m.id || `hist-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
+          role: m.role,
+          content: Array.isArray(m.content) ? m.content : [{ type: 'text', text: String(m.content || '') }],
+          timestamp: m.timestamp || Date.now(),
+          model: m.model,
+          provider: m.provider,
+          usage: m.usage,
+          stopReason: m.stopReason,
+          toolCallId: m.toolCallId,
+          toolName: m.toolName,
+          isError: m.isError,
+          command: m.command,
+          output: m.output,
+          exitCode: m.exitCode,
+        })
+      }
+      store.collapseLoadedMessages()
+      console.log('[usePiAgent] 从文件加载消息:', msgs.length, '条, path:', sessionPath)
+      return true
+    } catch (e) {
+      console.warn('[usePiAgent] 文件读取失败:', e)
+      return false
     }
   }
 
@@ -92,6 +140,8 @@ export function usePiAgent() {
           exitCode: m.exitCode,
         })
       }
+      // 自动折叠已加载消息的工具调用
+      store.collapseLoadedMessages()
     } catch (e) {
       // 消息加载失败不阻塞
     }
@@ -271,7 +321,36 @@ export function usePiAgent() {
     if (!app) {
       throw new Error('后端未就绪，消息未发送到 pi agent')
     }
+
+    // 确保 pi 运行在当前会话上下文中（必要时静默切换）
+    const sessionPath = store.appState.sessionFile || store.currentSession?.filePath
+    if (sessionPath) {
+      await ensureSessionContext(sessionPath)
+    }
+
     return app.SendPrompt(message, images || [])
+  }
+
+  // 确保 pi 运行在指定的会话上下文中（切换会话时 pi 不自动重启，发消息时才切换）
+  async function ensureSessionContext(sessionPath: string) {
+    const app = getApp()
+    if (!app) return
+
+    try {
+      const stateJson = await app.GetState()
+      const state = JSON.parse(stateJson)
+      // pi 已在目标会话上下文中，无需切换
+      if (state.sessionFile === sessionPath) return
+    } catch {
+      // GetState 失败，视为需要切换
+    }
+
+    // 重启 pi 到目标会话（消息已从文件缓存加载，这里只切换 pi 上下文，不刷新消息）
+    const appInfo = await getAppInfo()
+    await app.StartAgent(appInfo.homeDir || '', sessionPath)
+    refreshState().catch(() => {})
+    loadSessions()
+    console.log('[usePiAgent] pi 已切换到会话:', sessionPath)
   }
 
   async function sendSteer(message: string): Promise<string> {
@@ -329,10 +408,9 @@ export function usePiAgent() {
     const app = getApp()
     if (!app) throw new Error('后端未就绪')
     const resp = await app.NewSession()
-    // 新会话创建成功，刷新状态和列表
+    // 新会话创建成功，并行刷新状态和列表
     store.clearMessages()
-    await refreshState()
-    await loadSessions()
+    await Promise.all([refreshState(), loadSessions()])
     return resp
   }
 
@@ -343,11 +421,22 @@ export function usePiAgent() {
       const json = await app.GetSessions()
       const sessions: SessionInfo[] = JSON.parse(json)
       store.setSessions(sessions)
+      // 后台预加载最近 5 个会话的消息到 Go 内存缓存
+      preloadRecentSessions()
       return sessions
     } catch (err) {
       console.error('[usePiAgent] 加载会话列表失败:', err)
       return []
     }
+  }
+
+  // 后台预加载最近会话的消息（不阻塞 UI）
+  function preloadRecentSessions() {
+    const app = getApp()
+    if (!app) return
+    app.PreloadRecentSessions(5).catch((e: any) => {
+      console.warn('[usePiAgent] 预加载会话失败:', e)
+    })
   }
 
   // agent 完成后自动为未命名的会话设置标题
@@ -496,6 +585,8 @@ export function usePiAgent() {
 
   return {
     init,
+    switchSessionInBackground,
+    loadMessagesFromFile,
     sendPrompt,
     sendSteer,
     sendFollowUp,

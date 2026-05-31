@@ -132,7 +132,20 @@ func withPnpmPath(env []string) []string {
 
 // readEvents 从 stdout 读取 JSONL 事件
 func (c *Client) readEvents() {
-	defer close(c.events)
+	defer func() {
+		close(c.events)
+		// pi 进程退出时，清理所有等待中的请求，避免 SendCommand 永久阻塞
+		c.mu.Lock()
+		for id, ch := range c.respChs {
+			ch <- &RPCResponse{
+				ID:      id,
+				Type:    "response",
+				Success: false,
+				Error:   "pi 进程已退出",
+			}
+		}
+		c.mu.Unlock()
+	}()
 	scanner := bufio.NewScanner(c.stdout)
 	// 增大 buffer 以处理大型 JSON 行
 	scanner.Buffer(make([]byte, 0, 1024*1024), 16*1024*1024)
@@ -215,8 +228,14 @@ func (c *Client) SendCommand(cmd RPCCommand) (json.RawMessage, error) {
 		return nil, fmt.Errorf("写入命令失败: %w", err)
 	}
 
-	// 等待响应
-	resp := <-respCh
+	// 等待响应（带超时检测，避免 pi 崩溃时永久阻塞）
+	var resp *RPCResponse
+	select {
+	case resp = <-respCh:
+	case <-c.done:
+		return nil, fmt.Errorf("pi 进程已退出")
+	}
+
 	if resp == nil {
 		return nil, fmt.Errorf("未收到响应")
 	}

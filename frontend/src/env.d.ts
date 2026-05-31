@@ -40,6 +40,8 @@ declare global {
           UpdatePackage(source: string): Promise<string>
           UpdateAllPackages(): Promise<string>
           RetryAgentStartup(): Promise<void>
+          PreloadRecentSessions(count: number): Promise<string>
+          GetMessagesFromFile(sessionPath: string): Promise<string>
           RespondToExtensionUI(id: string, value: string, confirmed: boolean, cancelled: boolean): Promise<void>
         }
       }
