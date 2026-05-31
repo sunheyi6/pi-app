@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { useChatStore } from '../stores/chatStore'
+import { usePiAgent } from '../composables/usePiAgent'
+import SlashCommandMenu from './SlashCommandMenu.vue'
+import type { CommandInfo } from '../types'
 
 const props = defineProps<{
   isStreaming: boolean
@@ -14,14 +17,25 @@ const emit = defineEmits<{
 }>()
 
 const store = useChatStore()
+const piAgent = usePiAgent()
 
 const inputText = ref('')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const isSending = ref(false)
+const commands = ref<CommandInfo[]>([])
+const commandsLoaded = ref(false)
+const slashMenuClosed = ref(false)
+const slashMenuRef = ref<InstanceType<typeof SlashCommandMenu> | null>(null)
 let lastSendTime = 0
 let sendingTimer: ReturnType<typeof setTimeout> | null = null
 
 const canSend = computed(() => inputText.value.trim().length > 0 && !isSending.value)
+const slashQuery = computed(() => inputText.value.startsWith('/') ? inputText.value.slice(1) : '')
+const showSlashMenu = computed(() =>
+  !slashMenuClosed.value &&
+  inputText.value.startsWith('/') &&
+  !inputText.value.includes(' ')
+)
 
 function handleSend() {
   const now = Date.now()
@@ -72,6 +86,10 @@ function handleAbort() {
 }
 
 function handleKeydown(e: KeyboardEvent) {
+  if (showSlashMenu.value && slashMenuRef.value?.handleKeydown(e)) {
+    e.preventDefault()
+    return
+  }
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     handleSend()
@@ -82,6 +100,21 @@ function handleKeydown(e: KeyboardEvent) {
       handleAbort()
     }
   }
+}
+
+async function handleInput() {
+  slashMenuClosed.value = false
+  autoResize()
+  if (inputText.value.startsWith('/') && !commandsLoaded.value) {
+    commandsLoaded.value = true
+    commands.value = await piAgent.getCommands()
+  }
+}
+
+function selectSlashCommand(command: CommandInfo) {
+  inputText.value = `/${command.name} `
+  slashMenuClosed.value = true
+  nextTick(() => focusInput())
 }
 
 function autoResize() {
@@ -183,11 +216,19 @@ watch(() => store.focusInputCounter, () => {
                 border border-gray-300 dark:border-white/10 focus-within:border-gray-400 dark:focus-within:border-white/20
                 focus-within:shadow-lg focus-within:shadow-blue-500/5
                 transition-all duration-200 cursor-text">
+        <SlashCommandMenu
+          v-if="showSlashMenu"
+          ref="slashMenuRef"
+          :commands="commands"
+          :query="slashQuery"
+          @select="selectSlashCommand"
+          @close="slashMenuClosed = true"
+        />
         <textarea
           ref="textareaRef"
           v-model="inputText"
           @keydown="handleKeydown"
-          @input="autoResize"
+          @input="handleInput"
           :disabled="isSending"
           :placeholder="isAgentRunning ? 'Agent 工作中...' : '输入消息...'"
           rows="1"

@@ -1,6 +1,7 @@
 import { onMounted, onUnmounted } from 'vue'
 import { useChatStore } from '../stores/chatStore'
-import type { RPCEvent, ModelInfo, SessionInfo, PackageActionResult, PackageInfo, PackageScope } from '../types'
+import { useExtensionUI } from './useExtensionUI'
+import type { RPCEvent, ModelInfo, SessionInfo, PackageActionResult, PackageInfo, PackageScope, CommandInfo } from '../types'
 
 // 模块级标志：防止事件监听器被注册多次
 let eventListenerStarted = false
@@ -18,6 +19,7 @@ function getApp() {
 
 export function usePiAgent() {
   const store = useChatStore()
+  const extensionUI = useExtensionUI()
   let unsubscribe: (() => void) | null = null
 
   // ========== 初始化 ==========
@@ -26,6 +28,7 @@ export function usePiAgent() {
     if (!app) return
 
     try {
+      await extensionUI.clearPending()
       await app.StartAgent(cwd, sessionPath || '')
       console.log('[usePiAgent] Agent 已启动, session=', sessionPath || '(new)')
 
@@ -203,6 +206,10 @@ export function usePiAgent() {
       case 'turn_start':
         break
 
+      case 'extension_ui_request':
+        extensionUI.handleRequest(event)
+        break
+
       default:
         console.log('[usePiAgent] 未处理的事件:', event.type)
     }
@@ -310,7 +317,9 @@ export function usePiAgent() {
   async function abort(): Promise<string> {
     const app = getApp()
     if (!app) throw new Error('后端未就绪')
-    return app.Abort()
+    const result = await app.Abort()
+    await extensionUI.clearPending()
+    return result
   }
 
   async function setModel(provider: string, modelId: string): Promise<string> {
@@ -392,6 +401,18 @@ export function usePiAgent() {
       return data.models || []
     } catch (err) {
       console.error('[usePiAgent] 获取模型列表失败:', err)
+      return []
+    }
+  }
+
+  async function getCommands(): Promise<CommandInfo[]> {
+    const app = getApp()
+    if (!app) return []
+    try {
+      const json = await app.GetCommands()
+      const data = JSON.parse(json)
+      return data.commands || data || []
+    } catch {
       return []
     }
   }
@@ -490,6 +511,7 @@ export function usePiAgent() {
     eventListenerStarted = false
     const app = getApp()
     if (app) {
+      extensionUI.clearPending()
       app.StopAgent()
     }
   })
@@ -505,6 +527,7 @@ export function usePiAgent() {
     newSession,
     loadSessions,
     getAvailableModels,
+    getCommands,
     selectDirectory,
     getAppInfo,
     getAuthKeys,

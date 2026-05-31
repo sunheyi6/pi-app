@@ -3,13 +3,17 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import Sidebar from './components/Sidebar.vue'
 import ChatArea from './components/ChatArea.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
+import ExtensionUIDialog from './components/ExtensionUIDialog.vue'
+import ExtensionNotifications from './components/ExtensionNotifications.vue'
 import { usePiAgent } from './composables/usePiAgent'
+import { useExtensionUI } from './composables/useExtensionUI'
 import { useChatStore } from './stores/chatStore'
 import { useThemeStore } from './stores/themeStore'
 
 const store = useChatStore()
 const piAgent = usePiAgent()
 const themeStore = useThemeStore()
+const extensionUI = useExtensionUI()
 const initialized = ref(false)
 const showWelcome = ref(true)
 const sidebarCollapsed = ref(false)
@@ -174,6 +178,17 @@ onUnmounted(() => {
       :model="store.appState.model"
       :thinking-level="store.appState.thinkingLevel"
       @close="showSettings = false"
+    />
+
+    <ExtensionUIDialog
+      v-if="extensionUI.activeRequest.value"
+      :request="extensionUI.activeRequest.value"
+      @respond="(value: string, confirmed: boolean) => extensionUI.respond(value, confirmed)"
+      @cancel="extensionUI.cancel()"
+    />
+    <ExtensionNotifications
+      :notifications="extensionUI.notifications.value"
+      @dismiss="extensionUI.removeNotification"
     />
   </div>
 </template>

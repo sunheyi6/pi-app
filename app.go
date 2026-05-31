@@ -573,10 +573,28 @@ func (a *App) SelectDirectory() (string, error) {
 
 // ListPackages returns packages visible from the current working directory.
 func (a *App) ListPackages(scope string) (string, error) {
-	return a.runPackageOperation(piagent.PackageOperation{
+	manager, cwd, err := a.packageRunnerForUse()
+	if err != nil {
+		return "", err
+	}
+	result, err := manager.Run(context.Background(), cwd, piagent.PackageOperation{
 		Action: "list",
 		Scope:  piagent.PackageScope(scope),
-	}, false)
+	})
+	if err != nil {
+		return "", err
+	}
+	if scope == string(piagent.ScopeProject) || scope == string(piagent.ScopeGlobal) {
+		filtered := result.Packages[:0]
+		for _, item := range result.Packages {
+			if item.Scope == piagent.PackageScope(scope) {
+				filtered = append(filtered, item)
+			}
+		}
+		result.Packages = filtered
+	}
+	data, _ := json.Marshal(result)
+	return string(data), nil
 }
 
 // InstallPackage installs a package and reloads the active agent session.

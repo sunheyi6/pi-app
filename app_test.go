@@ -99,3 +99,23 @@ func TestRetryAgentStartupUsesLastRestartContext(t *testing.T) {
 		t.Fatalf("restart attempts = %d, want 2", attempts)
 	}
 }
+
+func TestListPackagesFiltersRequestedScope(t *testing.T) {
+	runner := &fakePackageRunner{result: piagent.PackageResult{
+		Packages: []piagent.PackageInfo{
+			{Source: "npm:project", Scope: piagent.ScopeProject},
+			{Source: "npm:global", Scope: piagent.ScopeGlobal},
+		},
+	}}
+	app := NewApp()
+	app.curCwd = t.TempDir()
+	app.packageManager = runner
+
+	result, err := app.ListPackages("global")
+	if err != nil {
+		t.Fatalf("ListPackages() error = %v", err)
+	}
+	if strings.Contains(result, "npm:project") || !strings.Contains(result, "npm:global") {
+		t.Fatalf("ListPackages() = %s, want only global package", result)
+	}
+}

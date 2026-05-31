@@ -203,6 +203,25 @@ export interface RPCEvent {
   [key: string]: any
 }
 
+export interface ExtensionUIRequest {
+  type: 'extension_ui_request'
+  id: string
+  method: string
+  title?: string
+  message?: string
+  options?: string[]
+  timeout?: number
+  placeholder?: string
+  prefill?: string
+  notifyType?: string
+}
+
+export interface ExtensionNotification {
+  id: string
+  message: string
+  type: string
+}
+
 // 图片数据
 export interface ImageData {
   type: string
