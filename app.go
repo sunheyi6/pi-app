@@ -16,12 +16,27 @@ import (
 )
 
 type App struct {
-	ctx       context.Context
-	client    *piagent.Client
-	sessions  *piagent.SessionManager
-	mu        sync.Mutex
-	curCwd    string
-	events    map[string]func(data any) // 前端事件回调
+	ctx                    context.Context
+	client                 *piagent.Client
+	sessions               *piagent.SessionManager
+	mu                     sync.Mutex
+	curCwd                 string
+	activeSessionPath      string
+	packageManager         packageRunner
+	restartAgent           func(cwd string, sessionPath string) error
+	lastRestartCwd         string
+	lastRestartSessionPath string
+	events                 map[string]func(data any) // 前端事件回调
+}
+
+type packageRunner interface {
+	Run(ctx context.Context, cwd string, operation piagent.PackageOperation) (piagent.PackageResult, error)
+}
+
+type packageActionResult struct {
+	piagent.PackageResult
+	Restarted    bool   `json:"restarted"`
+	RestartError string `json:"restartError,omitempty"`
 }
 
 func NewApp() *App {
@@ -67,6 +82,7 @@ func (a *App) StartAgent(cwd string, sessionPath string) error {
 		return fmt.Errorf("启动 agent 失败: %w", err)
 	}
 	a.client = client
+	a.activeSessionPath = sessionPath
 
 	// 启动事件监听
 	go a.listenEvents(client)
@@ -534,6 +550,138 @@ func (a *App) SelectDirectory() (string, error) {
 		return "", err
 	}
 	return dir, nil
+}
+
+// ListPackages returns packages visible from the current working directory.
+func (a *App) ListPackages(scope string) (string, error) {
+	return a.runPackageOperation(piagent.PackageOperation{
+		Action: "list",
+		Scope:  piagent.PackageScope(scope),
+	}, false)
+}
+
+// InstallPackage installs a package and reloads the active agent session.
+func (a *App) InstallPackage(source string, scope string) (string, error) {
+	return a.runPackageOperation(piagent.PackageOperation{
+		Action: "install",
+		Source: source,
+		Scope:  piagent.PackageScope(scope),
+	}, true)
+}
+
+// RemovePackage removes a package and reloads the active agent session.
+func (a *App) RemovePackage(source string, scope string) (string, error) {
+	return a.runPackageOperation(piagent.PackageOperation{
+		Action: "remove",
+		Source: source,
+		Scope:  piagent.PackageScope(scope),
+	}, true)
+}
+
+// UpdatePackage updates one package and reloads the active agent session.
+func (a *App) UpdatePackage(source string) (string, error) {
+	return a.runPackageOperation(piagent.PackageOperation{
+		Action: "update",
+		Source: source,
+	}, true)
+}
+
+// UpdateAllPackages updates all packages and reloads the active agent session.
+func (a *App) UpdateAllPackages() (string, error) {
+	return a.runPackageOperation(piagent.PackageOperation{Action: "update"}, true)
+}
+
+// RetryAgentStartup retries the last package-triggered agent reload.
+func (a *App) RetryAgentStartup() error {
+	a.mu.Lock()
+	cwd := a.lastRestartCwd
+	sessionPath := a.lastRestartSessionPath
+	restart := a.restartAgent
+	a.mu.Unlock()
+
+	if cwd == "" {
+		return fmt.Errorf("没有可重试的 Agent 启动上下文")
+	}
+	if restart != nil {
+		return restart(cwd, sessionPath)
+	}
+	return a.StartAgent(cwd, sessionPath)
+}
+
+func (a *App) runPackageOperation(operation piagent.PackageOperation, restart bool) (string, error) {
+	manager, cwd, err := a.packageRunnerForUse()
+	if err != nil {
+		return "", err
+	}
+	result, err := manager.Run(context.Background(), cwd, operation)
+	if err != nil {
+		return "", err
+	}
+
+	response := packageActionResult{PackageResult: result}
+	if restart {
+		if err := a.restartCurrentAgent(); err != nil {
+			response.RestartError = err.Error()
+		} else {
+			response.Restarted = true
+		}
+	}
+	data, _ := json.Marshal(response)
+	return string(data), nil
+}
+
+func (a *App) packageRunnerForUse() (packageRunner, string, error) {
+	a.mu.Lock()
+	manager := a.packageManager
+	cwd := a.curCwd
+	a.mu.Unlock()
+
+	if manager != nil {
+		return manager, cwd, nil
+	}
+	created, err := piagent.NewPackageManager()
+	if err != nil {
+		return nil, "", err
+	}
+	a.mu.Lock()
+	if a.packageManager == nil {
+		a.packageManager = created
+	}
+	manager = a.packageManager
+	cwd = a.curCwd
+	a.mu.Unlock()
+	return manager, cwd, nil
+}
+
+func (a *App) restartCurrentAgent() error {
+	a.mu.Lock()
+	cwd := a.curCwd
+	sessionPath := a.activeSessionPath
+	client := a.client
+	a.mu.Unlock()
+
+	if client != nil {
+		if state, err := client.SendCommand(piagent.RPCCommand{Type: "get_state"}); err == nil {
+			var raw map[string]any
+			if json.Unmarshal(state, &raw) == nil {
+				if latest := getStringFromMap(raw, "sessionFile", "session_file", "sessionPath"); latest != "" {
+					sessionPath = latest
+				}
+			}
+		}
+	}
+
+	a.mu.Lock()
+	a.activeSessionPath = sessionPath
+	a.lastRestartCwd = cwd
+	a.lastRestartSessionPath = sessionPath
+	restart := a.restartAgent
+	a.mu.Unlock()
+
+	if restart != nil {
+		return restart(cwd, sessionPath)
+	}
+	return a.StartAgent(cwd, sessionPath)
 }
 
 // GetAppInfo 获取应用信息
