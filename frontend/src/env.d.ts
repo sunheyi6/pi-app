@@ -29,8 +29,11 @@ declare global {
           ExportHTML(outputPath: string): Promise<string>
           GetAvailableModels(): Promise<string>
           GetCommands(): Promise<string>
+          EnsureSessionNamed(firstMessage: string): Promise<string>
           SelectDirectory(): Promise<string>
           GetAppInfo(): Promise<string>
+          GetAuthKeys(): Promise<string>
+          SetApiKey(provider: string, key: string): Promise<string>
         }
       }
     }
